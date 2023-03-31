@@ -6918,7 +6918,7 @@ if HAS_CPU and not torch.backends.mps.is_available():
                 traced = make_fx(fn)(x1, x2)
                 compiled = compile_fx_inner(traced, [x1, x2])
                 assert same(fn(x1, x2)[0], compiled([x1, x2])[0], equal_nan=True)
-                assert metrics.generated_cpp_vec_kernel_count == 1
+                assert metrics.generated_cpp_vec_kernel_count == 2
 
                 torch._dynamo.reset()
                 metrics.reset()
@@ -6972,9 +6972,9 @@ if HAS_CPU and not torch.backends.mps.is_available():
                     metrics.reset()
                     x = torch.randn(64, 58, 28, 28)
                     opt_fn = torch._dynamo.optimize("inductor")(channel_shuffle)
-                    same(channel_shuffle(x, 2), opt_fn(x, 2))
+                    assert same(channel_shuffle(x, 2), opt_fn(x, 2))
                     if simdlen != 1:
-                        assert metrics.generated_cpp_vec_kernel_count == 1
+                        assert metrics.generated_cpp_vec_kernel_count == 2
 
         @slow()
         @unittest.skipIf(
@@ -7026,22 +7026,23 @@ if HAS_CPU and not torch.backends.mps.is_available():
 
             for simdlen in (None, 256, 1):
                 with config.patch({"cpp.simdlen": simdlen}):
-                    for shape in (
-                        (7, 7),
-                        (8, 8),
-                        (9, 9),
-                        (16, 16),
-                        (17, 17),
-                        (32, 32),
-                        (33, 33),
-                    ):
-                        torch._dynamo.reset()
-                        metrics.reset()
-                        x = torch.randn(shape)
-                        opt_fn = torch._dynamo.optimize("inductor")(fn)
-                        same(fn(x), opt_fn(x))
-                        if simdlen != 1:
-                            assert metrics.generated_cpp_vec_kernel_count == 1
+                    for dtype in (torch.float, torch.bfloat16):
+                        for shape in (
+                            (7, 7),
+                            (8, 8),
+                            (9, 9),
+                            (16, 16),
+                            (17, 17),
+                            (32, 32),
+                            (33, 33),
+                        ):
+                            torch._dynamo.reset()
+                            metrics.reset()
+                            x = torch.randn(shape, dtype=dtype)
+                            opt_fn = torch._dynamo.optimize("inductor")(fn)
+                            assert same(fn(x), opt_fn(x))
+                            if simdlen != 1:
+                                assert metrics.generated_cpp_vec_kernel_count == 2
 
         def test_transpose_non_contiguous(self):
             def fn(a):
